@@ -18,7 +18,7 @@ use serenity::{
 
 //Const variables -----------------------------------------------------------------------------------------------------------------------------------------
 const HELP_MSG: &str = "
-    run [-options] [\"brainfuck program\"]    
+    !run [Progam]  
 ";
 
 
@@ -72,47 +72,125 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn run(ctx: &Context, msg: &Message) -> CommandResult {
-    let input: Vec<&str> = msg.content.split(" ").collect();
-
-    let _options = input.clone().into_iter().find(|x| x.chars().nth(0).unwrap() == '-');
-
-    let program = 
-        String::from(input.into_iter().clone().find(|x| x.chars().nth(0).unwrap() == '\"' && x.chars().last().unwrap()  == '\"').unwrap_or("nothing"));
-
 
     msg.react(ctx, '🔃').await?;
     
-    let result = run_brainfuck(ctx, msg, &program);
-
-    msg.reply(ctx, result.unwrap()).await?;
+    let result = execute(ctx, msg, &msg.content).await;
 
     msg.delete_reactions(ctx).await?;
+
+    match result {
+        Ok(res) => {msg.reply(ctx, res).await?; msg.react(ctx, '✅').await?;},
+        Err(err) => {msg.reply(ctx, err).await?; msg.react(ctx, '❎').await?;},
+    };
 
     Ok(())
 }
 
 //Brainfuck part ------------------------------------------------------------------------------------------------------------------------------------------
 
-struct Runtime {
-    prg: String,
-    prg_pos: u32,
-    mem: [u8; 3000],
-    mem_pos: u32,
+#[derive(Debug,PartialEq)]
+enum Operators {
+    Inc,
+    Dec,
+    MovL,
+    MovR,
+    In,
+    Out,
+    LoopO,
+    LoopC
+}
 
-    std_out: String,
-    result: String
+#[derive(Debug,PartialEq)]
+struct Runtime {
+    prg: Vec<Operators>, 
+    prg_pos: usize, // Index of where we are in execution of the program
+    mem: [u8; 3000],
+    mem_pos: usize, // Pointer to cell
+
+    std_out: String, // Intermediat storage of output, will be flushed when sing In command, will move to result at the end of execution 
+    result: String,
+    error: Option<&'static str>
 }
 
 impl Runtime {
     fn new<'a>(raw_prg: &String) -> Runtime {
-        Runtime { prg: String::from(raw_prg.as_str()), prg_pos: 0, mem: [0; 3000], mem_pos: 0, std_out: String::from(""), result: String::from("") }
+        Runtime { prg: parse(raw_prg), prg_pos: 0, mem: [0; 3000], mem_pos: 0, std_out: String::from(""), result: String::from("result: "), error: None }
     }
 }
 
-fn run_brainfuck(_: &Context, _: &Message, prg: &String) -> Result<String, &'static str> {
-    let mut runtime = Runtime::new(prg);
+fn parse(prg: &String) -> Vec<Operators> {
+    let mut result:Vec<Operators> = vec![];
 
+    for char in prg.chars() {
+        let op = match char {
+            '+' => Some(Operators::Inc),
+            '-' => Some(Operators::Dec),
+            '<' => Some(Operators::MovL),
+            '>' => Some(Operators::MovR),
+            ',' => Some(Operators::In),
+            '.' => Some(Operators::Out),
+            '[' => Some(Operators::LoopO),
+            ']' => Some(Operators::LoopC),
+            _ => None,
+        };
 
-    runtime.result.push_str("test");
+        if let Some(x) = op {
+            result.push(x);
+        }
+    }
+    result
+}
+
+async fn execute(ctx: &Context, msg: &Message, program: &String) -> Result<String, &'static str> {
+    let mut runtime = Runtime::new(program);
+
+    while let None = runtime.error {
+        if runtime.prg_pos >= runtime.prg.len() {
+            break;
+        }
+
+        let mem_value = runtime.mem[runtime.mem_pos];
+        let current_operator = &runtime.prg[runtime.prg_pos];
+
+        match current_operator {
+            Operators::Inc => {runtime.mem[runtime.mem_pos] = mem_value.wrapping_add(1);},
+            Operators::Dec => {runtime.mem[runtime.mem_pos] = mem_value.wrapping_sub(1);},
+            Operators::MovL => {
+                let x = runtime.mem_pos.checked_sub(1);
+                if let Some(y) = x {
+                    runtime.mem_pos = y;
+                } else {
+                    runtime.error = Some("ERROR: Head moved off tape on left side!");
+                }
+            },
+            Operators::MovR => {
+                let x = runtime.mem_pos + 1;
+                if x > runtime.mem.len(){
+                    runtime.mem_pos = x;
+                } else {
+                    runtime.error = Some("ERROR: Head moved off tape on the right side!\nHELP: Max memory size is 3000");
+                }
+            },
+            Operators::In => todo!(),
+            // {
+            //     let _ = msg.reply(ctx, format!("{}\n\nenter input", runtime.std_out)).await;
+
+            //     runtime.std_out = String::from("");
+            // },
+            Operators::Out => {runtime.std_out.push(mem_value as char);},
+            Operators::LoopO => todo!(),
+            Operators::LoopC => todo!()
+        }
+
+        runtime.prg_pos = runtime.prg_pos + 1;
+    }
+
+    if let Some(err) = runtime.error {
+        return Err(err)
+    }
+
+    runtime.result.push_str(runtime.std_out.as_str());
+
     Ok(runtime.result)
 }
