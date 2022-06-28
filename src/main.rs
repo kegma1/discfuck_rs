@@ -68,6 +68,11 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn run(ctx: &Context, msg: &Message) -> CommandResult {
+    let args =  msg.content.split_once(" ").unwrap();
+    println!("{:?}", args);
+
+    println!("{:?}", msg.attachments.len());
+
     msg.react(ctx, '🔃').await?;
 
     let result = execute(ctx, msg, &msg.content).await;
@@ -160,9 +165,8 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
         }
 
         let mem_value = runtime.mem[runtime.mem_pos];
-        let current_operator = &runtime.prg[runtime.prg_pos];
 
-        match current_operator {
+        match runtime.prg[runtime.prg_pos] {
             Operators::Inc => {
                 runtime.mem[runtime.mem_pos] = mem_value.wrapping_add(1);
             }
@@ -179,7 +183,7 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
             }
             Operators::MovR => {
                 let x = runtime.mem_pos + 1;
-                if x > runtime.mem.len() {
+                if x < runtime.mem.len() {
                     runtime.mem_pos = x;
                 } else {
                     runtime.error = Some("ERROR: Head moved off tape on the right side!\nHELP: Max memory size is 3000");
@@ -211,8 +215,44 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
             Operators::Out => {
                 runtime.std_out.push(mem_value as char);
             }
-            Operators::LoopO => todo!(),
-            Operators::LoopC => todo!(),
+            Operators::LoopO => {
+                let curret_pos = runtime.prg_pos;
+                let mut counter = 1;
+
+                while counter != 0 {
+                    runtime.prg_pos += 1;
+                    let current_operator = &runtime.prg[runtime.prg_pos];
+
+                    match current_operator {
+                        Operators::LoopO => counter += 1,
+                        Operators::LoopC => counter -= 1,
+                        _ => (),
+                    }
+                }
+
+                if runtime.mem[runtime.mem_pos] != 0 {
+                    runtime.prg_pos = curret_pos;
+                }
+            }
+            Operators::LoopC => {
+                let curret_pos = runtime.prg_pos;
+                let mut counter = 1;
+
+                while counter != 0 {
+                    runtime.prg_pos -= 1;
+                    let current_operator = &runtime.prg[runtime.prg_pos];
+
+                    match current_operator {
+                        Operators::LoopO => counter -= 1,
+                        Operators::LoopC => counter += 1,
+                        _ => (),
+                    }
+                }
+
+                if runtime.mem[runtime.mem_pos] == 0 {
+                    runtime.prg_pos = curret_pos;
+                }
+            }
         }
 
         runtime.prg_pos += 1;
