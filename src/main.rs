@@ -4,29 +4,27 @@ extern crate dotenv;
 use dotenv::dotenv;
 use std::env;
 
+use serenity::collector::*;
 use serenity::{
     async_trait,
-    model::{channel::Message, gateway::Ready},
     framework::standard::{
-        macros:: {command,group},
-        StandardFramework,
-        CommandResult
+        macros::{command, group},
+        CommandResult, StandardFramework,
     },
+    futures::StreamExt,
+    model::{channel::Message, gateway::Ready},
     prelude::*,
 };
-
 
 //Const variables -----------------------------------------------------------------------------------------------------------------------------------------
 const HELP_MSG: &str = "
     !run [Progam]  
 ";
 
-
 //Discord bot part ----------------------------------------------------------------------------------------------------------------------------------------
 #[group]
 #[commands(help, run)]
 struct General;
-
 
 struct Handler;
 
@@ -45,7 +43,6 @@ async fn main() {
         .configure(|c| c.prefix("!"))
         .group(&GENERAL_GROUP);
 
-
     let token = env::var("TOKEN").expect("token");
 
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
@@ -56,7 +53,6 @@ async fn main() {
         .await
         .expect("Error creating client");
 
-    
     if let Err(why) = client.start().await {
         println!("An error occurred while running the client: {:?}", why);
     }
@@ -72,16 +68,21 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn run(ctx: &Context, msg: &Message) -> CommandResult {
-
     msg.react(ctx, '🔃').await?;
-    
+
     let result = execute(ctx, msg, &msg.content).await;
 
     msg.delete_reactions(ctx).await?;
 
     match result {
-        Ok(res) => {msg.reply(ctx, res).await?; msg.react(ctx, '✅').await?;},
-        Err(err) => {msg.reply(ctx, err).await?; msg.react(ctx, '❎').await?;},
+        Ok(res) => {
+            msg.reply(ctx, res).await?;
+            msg.react(ctx, '✅').await?;
+        }
+        Err(err) => {
+            msg.reply(ctx, err).await?;
+            msg.react(ctx, '❎').await?;
+        }
     };
 
     Ok(())
@@ -89,7 +90,7 @@ async fn run(ctx: &Context, msg: &Message) -> CommandResult {
 
 //Brainfuck part ------------------------------------------------------------------------------------------------------------------------------------------
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 enum Operators {
     Inc,
     Dec,
@@ -98,29 +99,37 @@ enum Operators {
     In,
     Out,
     LoopO,
-    LoopC
+    LoopC,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 struct Runtime {
-    prg: Vec<Operators>, 
+    prg: Vec<Operators>,
     prg_pos: usize, // Index of where we are in execution of the program
     mem: [u8; 3000],
     mem_pos: usize, // Pointer to cell
 
-    std_out: String, // Intermediat storage of output, will be flushed when sing In command, will move to result at the end of execution 
+    std_out: String, // Intermediat storage of output, will be flushed when sing In command, will move to result at the end of execution
     result: String,
-    error: Option<&'static str>
+    error: Option<&'static str>,
 }
 
 impl Runtime {
-    fn new<'a>(raw_prg: &String) -> Runtime {
-        Runtime { prg: parse(raw_prg), prg_pos: 0, mem: [0; 3000], mem_pos: 0, std_out: String::from(""), result: String::from("result: "), error: None }
+    fn new(raw_prg: &str) -> Runtime {
+        Runtime {
+            prg: parse(raw_prg),
+            prg_pos: 0,
+            mem: [0; 3000],
+            mem_pos: 0,
+            std_out: String::from(""),
+            result: String::from("result: "),
+            error: None,
+        }
     }
 }
 
-fn parse(prg: &String) -> Vec<Operators> {
-    let mut result:Vec<Operators> = vec![];
+fn parse(prg: &str) -> Vec<Operators> {
+    let mut result: Vec<Operators> = vec![];
 
     for char in prg.chars() {
         let op = match char {
@@ -142,10 +151,10 @@ fn parse(prg: &String) -> Vec<Operators> {
     result
 }
 
-async fn execute(ctx: &Context, msg: &Message, program: &String) -> Result<String, &'static str> {
+async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, &'static str> {
     let mut runtime = Runtime::new(program);
 
-    while let None = runtime.error {
+    while runtime.error.is_none() {
         if runtime.prg_pos >= runtime.prg.len() {
             break;
         }
@@ -154,8 +163,12 @@ async fn execute(ctx: &Context, msg: &Message, program: &String) -> Result<Strin
         let current_operator = &runtime.prg[runtime.prg_pos];
 
         match current_operator {
-            Operators::Inc => {runtime.mem[runtime.mem_pos] = mem_value.wrapping_add(1);},
-            Operators::Dec => {runtime.mem[runtime.mem_pos] = mem_value.wrapping_sub(1);},
+            Operators::Inc => {
+                runtime.mem[runtime.mem_pos] = mem_value.wrapping_add(1);
+            }
+            Operators::Dec => {
+                runtime.mem[runtime.mem_pos] = mem_value.wrapping_sub(1);
+            }
             Operators::MovL => {
                 let x = runtime.mem_pos.checked_sub(1);
                 if let Some(y) = x {
@@ -163,31 +176,50 @@ async fn execute(ctx: &Context, msg: &Message, program: &String) -> Result<Strin
                 } else {
                     runtime.error = Some("ERROR: Head moved off tape on left side!");
                 }
-            },
+            }
             Operators::MovR => {
                 let x = runtime.mem_pos + 1;
-                if x > runtime.mem.len(){
+                if x > runtime.mem.len() {
                     runtime.mem_pos = x;
                 } else {
                     runtime.error = Some("ERROR: Head moved off tape on the right side!\nHELP: Max memory size is 3000");
                 }
-            },
-            Operators::In => todo!(),
-            // {
-            //     let _ = msg.reply(ctx, format!("{}\n\nenter input", runtime.std_out)).await;
+            }
+            Operators::In => {
+                let _ = msg
+                    .reply(ctx, format!("{}\n\nenter input", runtime.std_out))
+                    .await;
 
-            //     runtime.std_out = String::from("");
-            // },
-            Operators::Out => {runtime.std_out.push(mem_value as char);},
+                let mut collecter = MessageCollectorBuilder::new(ctx)
+                    .author_id(msg.author.id)
+                    .channel_id(msg.channel_id)
+                    .build();
+
+                while let Some(input) = collecter.next().await {
+                    let char = input.content.chars().next().unwrap();
+                    if char.is_ascii() {
+                        runtime.mem[runtime.mem_pos] = char as u8;
+                        runtime.std_out = String::from("");
+                        break;
+                    } else {
+                        let _ = input.reply(ctx, "Input not excepted!\nMake shure your input has a valid ASCII value.\nTry again").await;
+                    }
+                }
+
+                runtime.std_out = String::from("");
+            }
+            Operators::Out => {
+                runtime.std_out.push(mem_value as char);
+            }
             Operators::LoopO => todo!(),
-            Operators::LoopC => todo!()
+            Operators::LoopC => todo!(),
         }
 
-        runtime.prg_pos = runtime.prg_pos + 1;
+        runtime.prg_pos += 1;
     }
 
     if let Some(err) = runtime.error {
-        return Err(err)
+        return Err(err);
     }
 
     runtime.result.push_str(runtime.std_out.as_str());
