@@ -202,7 +202,7 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
             }
             Operators::In => {
                 let _ = msg
-                    .reply(ctx, format!("{}\n\nenter input", runtime.std_out))
+                    .reply(ctx, format!("{}\n\nenter input\n!quit to exit", runtime.std_out))
                     .await;
 
                 let mut collecter = MessageCollectorBuilder::new(ctx)
@@ -220,7 +220,7 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
                         runtime.std_out = String::from("");
                         break;
                     } else {
-                        let _ = input.reply(ctx, "Input not excepted!\nMake shure your input has a valid ASCII value.\nTry again").await;
+                        let _ = input.reply(ctx, "Input not excepted!\nMake shure your input has a valid ASCII value.\nTry again\n!quit to exit").await;
                     }
                 }
 
