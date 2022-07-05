@@ -68,14 +68,25 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn run(ctx: &Context, msg: &Message) -> CommandResult {
-    let args =  msg.content.split_once(" ").unwrap();
-    println!("{:?}", args);
-
-    println!("{:?}", msg.attachments.len());
+    let user_program = if !msg.attachments.is_empty() {
+        let file = msg.attachments.first().unwrap();
+        if file.filename[file.filename.len() - 3..].to_string() == ".bf" {
+            Ok(String::from_utf8(file.download().await.unwrap()).unwrap())
+        } else {
+            Err("ERROR: Unsupported file type!")
+        }
+    } else if let Some((_, args)) = msg.content.split_once(' ') {
+        Ok(args.to_string())
+    } else {
+        Err("ERROR: No program was supplied!")
+    };
 
     msg.react(ctx, '🔃').await?;
 
-    let result = execute(ctx, msg, &msg.content).await;
+    let result = match user_program {
+        Ok(prg) => execute(ctx, msg, prg.as_str()).await,
+        Err(e) => Err(e),
+    };
 
     msg.delete_reactions(ctx).await?;
 
@@ -159,7 +170,7 @@ fn parse(prg: &str) -> Vec<Operators> {
 async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, &'static str> {
     let mut runtime = Runtime::new(program);
 
-    while runtime.error.is_none() {
+    'main: while runtime.error.is_none() {
         if runtime.prg_pos >= runtime.prg.len() {
             break;
         }
@@ -200,6 +211,9 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
                     .build();
 
                 while let Some(input) = collecter.next().await {
+                    if input.content == "!quit" {
+                        break 'main;
+                    }
                     let char = input.content.chars().next().unwrap();
                     if char.is_ascii() {
                         runtime.mem[runtime.mem_pos] = char as u8;
