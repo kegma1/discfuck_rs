@@ -3,6 +3,7 @@ extern crate dotenv;
 
 use dotenv::dotenv;
 use std::env;
+use std::time::{Duration, Instant};
 
 use serenity::collector::*;
 use serenity::{
@@ -15,6 +16,7 @@ use serenity::{
     model::{channel::Message, gateway::Ready},
     prelude::*,
 };
+
 
 //Const variables -----------------------------------------------------------------------------------------------------------------------------------------
 const HELP_MSG: &str = "
@@ -169,6 +171,7 @@ fn parse(prg: &str) -> Vec<Operators> {
 
 async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, &'static str> {
     let mut runtime = Runtime::new(program);
+    let main_timer = Instant::now();
 
     'main: while runtime.error.is_none() {
         if runtime.prg_pos >= runtime.prg.len() {
@@ -176,7 +179,7 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
         }
 
         let mem_value = runtime.mem[runtime.mem_pos];
-
+        // println!("{:?}", runtime.prg[runtime.prg_pos]);
         match runtime.prg[runtime.prg_pos] {
             Operators::Inc => {
                 runtime.mem[runtime.mem_pos] = mem_value.wrapping_add(1);
@@ -269,9 +272,13 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
             }
         }
 
+        if main_timer.elapsed() >= Duration::from_secs(1800) {
+            runtime.error = Some("ERROR: Took too long to execute");
+        }
+
         runtime.prg_pos += 1;
     }
-
+    println!("{:?}", main_timer.elapsed());
     if let Some(err) = runtime.error {
         return Err(err);
     }
