@@ -82,6 +82,7 @@ async fn run(ctx: &Context, msg: &Message) -> CommandResult {
     };
 
     msg.react(ctx, '🔃').await?;
+    msg.react(ctx, '🛑').await?;
 
     let result = match user_program {
         Ok(prg) => execute(ctx, msg, prg.as_str()).await,
@@ -270,6 +271,10 @@ async fn execute(ctx: &Context, msg: &Message, program: &str) -> Result<String, 
         }
 
         runtime.prg_pos += 1;
+       
+        if msg.reaction_users(ctx, '🛑', None, None).await.unwrap().contains(&msg.author) {
+            runtime.error = Some("Manualy stopped execution");
+        }
     }
 
     if let Some(err) = runtime.error {
