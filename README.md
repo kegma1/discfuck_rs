@@ -25,9 +25,9 @@ WIP
 
 # TODO
 - [x] Make it work
-- [ ] Detect infinite loops in brainfuck
+- [ ] Add multi-therding
 - [ ] Make UI look better
 - [ ] Add debug fetures
 - [ ] Add config file
 - [ ] Add docker support
-- [ ] Add comment to the code
+- [ ] Add comments to the code
